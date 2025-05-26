@@ -23,13 +23,13 @@
   "nodejs": "11.12.0",
   "metric_values": [
     {
-      "key": "tools.mcp.search_sonar_issues_in_projects_success_count",
+      "key": "tools.search_sonar_issues_in_projects_success_count",
       "value": "1",
       "type": "INTEGER",
       "granularity": "DAILY"
     },
     {
-      "key": "tools.mcp.search_sonar_issues_in_projects_error_count",
+      "key": "tools.search_sonar_issues_in_projects_error_count",
       "value": "1",
       "type": "INTEGER",
       "granularity": "DAILY"
