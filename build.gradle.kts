@@ -68,6 +68,7 @@ license {
 }
 
 val mockitoAgent = configurations.create("mockitoAgent")
+val sonarPhpPlugin: Configuration by configurations.creating
 
 dependencies {
 	implementation(libs.mcp.server)
@@ -85,6 +86,7 @@ dependencies {
 	testImplementation(libs.awaitility)
 	testImplementation(libs.wiremock)
 	testRuntimeOnly(libs.junit.launcher)
+	sonarPhpPlugin(libs.sonar.php)
 	mockitoAgent(libs.mockito.core) { isTransitive = false }
 }
 
@@ -127,6 +129,15 @@ tasks {
 		description = "Builds the Docker image with the current project version"
 
 		commandLine("docker", "build", "-t", "$appName:$appVersion", "--build-arg", "APP_VERSION=$appVersion", ".")
+	}
+
+	register<Copy>("copySonarPhpPlugin") {
+		from(sonarPhpPlugin)
+		into("$buildDir/plugins")
+	}
+
+	named("test") {
+		dependsOn("copySonarPhpPlugin")
 	}
 }
 
