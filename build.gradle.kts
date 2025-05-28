@@ -1,9 +1,6 @@
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.zip.ZipFile
-import org.apache.commons.compress.archivers.ArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 
@@ -19,7 +16,8 @@ plugins {
 
 group = "org.sonarsource.sonarqube.mcp.server"
 
-val omnisharpVersion: String by project
+val pluginName = "sonarqube-mcp-server"
+val mainClassName = "org.sonarsource.sonarqube.mcp.SonarQubeMcpServer"
 
 // The environment variables ARTIFACTORY_PRIVATE_USERNAME and ARTIFACTORY_PRIVATE_PASSWORD are used on CI env
 // On local box, please add artifactoryUsername and artifactoryPassword to ~/.gradle/gradle.properties
@@ -69,6 +67,14 @@ license {
 
 val mockitoAgent = configurations.create("mockitoAgent")
 
+configurations {
+	val sqplugins = create("sqplugins") { isTransitive = false }
+	create("sqplugins_deps") {
+		extendsFrom(sqplugins)
+		isTransitive = true
+	}
+}
+
 dependencies {
 	implementation(libs.mcp.server)
 	implementation(libs.sonarlint.java.client.utils)
@@ -85,6 +91,7 @@ dependencies {
 	testImplementation(libs.awaitility)
 	testImplementation(libs.wiremock)
 	testRuntimeOnly(libs.junit.launcher)
+	"sqplugins"(libs.bundles.sonar.analyzers)
 	mockitoAgent(libs.mockito.core) { isTransitive = false }
 }
 
@@ -95,11 +102,12 @@ tasks {
 		systemProperty("sonarqube.mcp.server.version", project.version)
 		doNotTrackState("Tests should always run")
 		jvmArgs("-javaagent:${mockitoAgent.asPath}")
+		dependsOn("preparePlugins")
 	}
 
 	jar {
 		manifest {
-			attributes["Main-Class"] = "org.sonarsource.sonarqube.mcp.SonarQubeMcpServer"
+			attributes["Main-Class"] = mainClassName
 			attributes["Implementation-Version"] = project.version
 		}
 
@@ -112,6 +120,7 @@ tasks {
 		}
 
 		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+		dependsOn("preparePlugins")
 	}
 
 	jacocoTestReport {
@@ -127,11 +136,71 @@ tasks {
 		description = "Builds the Docker image with the current project version"
 
 		commandLine("docker", "build", "-t", "$appName:$appVersion", "--build-arg", "APP_VERSION=$appVersion", ".")
+		dependsOn("build")
+	}
+
+	register("preparePlugins") {
+		val destinationDir = file(layout.buildDirectory)
+		description = "Prepare SonarQube plugins"
+		group = "build"
+		
+		// Incremental build support
+		inputs.files(configurations["sqplugins"])
+		outputs.dir("$destinationDir/$pluginName/plugins")
+
+		doLast {
+			copyPlugins(destinationDir, pluginName)
+			unzipEslintBridgeBundle(destinationDir, pluginName)
+		}
+	}
+}
+
+fun copyPlugins(destinationDir: File, pluginName: String) {
+	copy {
+		from(project.configurations["sqplugins"])
+		into(file("$destinationDir/$pluginName/plugins"))
+	}
+}
+
+fun unzipEslintBridgeBundle(destinationDir: File, pluginName: String) {
+	val pluginsDir = File("$destinationDir/$pluginName/plugins")
+	val jarPath = pluginsDir.listFiles()?.find {
+		it.name.startsWith("sonar-javascript-plugin-") && it.name.endsWith(".jar")
+	} ?: throw GradleException("sonar-javascript-plugin-* JAR not found in $pluginsDir")
+
+	ZipFile(jarPath).use { zipFile ->
+		val entry = zipFile.entries().asSequence().find { it.name.matches(Regex("sonarjs-.*\\.tgz")) }
+			?: throw GradleException("eslint bridge server bundle not found in JAR $jarPath")
+
+		val outputFolderPath = Paths.get("$pluginsDir/eslint-bridge")
+		val outputFilePath = outputFolderPath.resolve(entry.name)
+
+		Files.createDirectories(outputFolderPath)
+
+		zipFile.getInputStream(entry).use { input ->
+			Files.copy(input, outputFilePath)
+		}
+
+		GzipCompressorInputStream(Files.newInputStream(outputFilePath)).use { gzipInput ->
+			TarArchiveInputStream(gzipInput).use { tarInput ->
+				generateSequence { tarInput.nextEntry }
+					.forEach { tarEntry ->
+						val outputFile = outputFolderPath.resolve(tarEntry.name).toFile()
+						if (tarEntry.isDirectory) {
+							outputFile.mkdirs()
+						} else {
+							outputFile.parentFile.mkdirs()
+							Files.copy(tarInput, outputFile.toPath())
+						}
+					}
+			}
+		}
+		Files.deleteIfExists(outputFilePath)
 	}
 }
 
 application {
-	mainClass = "org.sonarsource.sonarqube.mcp.SonarQubeMcpServer"
+	mainClass = mainClassName
 }
 
 artifactory {
@@ -173,7 +242,7 @@ sonar {
 		property("sonar.projectName", "SonarQube MCP Server")
 		property("sonar.links.ci", "https://cirrus-ci.com/github/SonarSource/sonar-mcp-server")
 		property("sonar.links.scm", "https://github.com/SonarSource/sonar-mcp-server")
-		property("sonar.links.issue", "https://jira.sonarsource.com/browse/SLCORE")
+		property("sonar.links.issue", "https://jira.sonarsource.com/browse/MCP")
 		property("sonar.exclusions", "**/build/**/*")
 	}
 }
