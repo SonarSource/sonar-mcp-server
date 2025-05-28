@@ -7,7 +7,7 @@ ARG APP_VERSION=
 
 WORKDIR /app
 
-COPY build/libs/sonarqube-mcp-server-${APP_VERSION}.jar /app/sonarqube-mcp-server.jar
+COPY build/libs/sonarqube-mcp-server-${APP_VERSION}.jar ./sonarqube-mcp-server.jar
 
 RUN jdeps --ignore-missing-deps -q  \
     --recursive  \
@@ -32,18 +32,20 @@ COPY --from=builder /optimized-jdk-21 $JAVA_HOME
 
 ARG APP_VERSION=
 
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup && \
-    mkdir -p /home/appuser/.sonarlint /data/storage && \
-    chown -R appuser:appgroup /home/appuser /data/storage
-
 WORKDIR /app
 
-COPY --chown=appuser:appgroup --chmod=755 build/libs/sonarqube-mcp-server-${APP_VERSION}.jar /app/sonarqube-mcp-server.jar
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup && \
+    mkdir -p /home/appuser/.sonarlint ./storage && \
+    chown -R appuser:appgroup /home/appuser ./storage
+
+COPY --chown=appuser:appgroup --chmod=755 build/libs/sonarqube-mcp-server-${APP_VERSION}.jar ./sonarqube-mcp-server.jar
+COPY --chown=appuser:appgroup --chmod=755 build/sonarqube-mcp-server/plugins ./plugins
 
 USER appuser
 
-ENV STORAGE_PATH=/data/storage
+ENV STORAGE_PATH=./storage
+ENV PLUGINS_PATH=./plugins
 ENV SONARQUBE_CLOUD_TOKEN=
 ENV SONARQUBE_CLOUD_ORG=
 
-ENTRYPOINT ["java", "-jar", "/app/sonarqube-mcp-server.jar"]
+ENTRYPOINT ["java", "-jar", "./sonarqube-mcp-server.jar"]
