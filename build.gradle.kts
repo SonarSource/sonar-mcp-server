@@ -102,6 +102,7 @@ tasks {
 		systemProperty("sonarqube.mcp.server.version", project.version)
 		doNotTrackState("Tests should always run")
 		jvmArgs("-javaagent:${mockitoAgent.asPath}")
+		dependsOn("preparePlugins")
 	}
 
 	jar {
@@ -119,6 +120,7 @@ tasks {
 		}
 
 		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+		dependsOn("preparePlugins")
 	}
 
 	jacocoTestReport {
