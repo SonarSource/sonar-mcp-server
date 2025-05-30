@@ -40,34 +40,21 @@ class ListLanguagesToolTests {
   class MissingPrerequisite {
 
     @SonarQubeMcpServerTest
-    void it_should_return_an_error_if_sonarqube_cloud_token_is_missing(SonarQubeMcpServerTestHarness harness) {
-      var mcpClient = harness.newClient(Map.of("SONARQUBE_CLOUD_ORG", "org"));
+    void it_should_return_an_error_if_sonarqube_token_is_missing(SonarQubeMcpServerTestHarness harness) {
+      var mcpClient = harness.newClient(Map.of("SONARQUBE_ORG", "org"));
 
       var result = mcpClient.callTool(new McpSchema.CallToolRequest(
         ListLanguagesTool.TOOL_NAME,
         Map.of()));
 
       assertThat(result)
-        .isEqualTo(new McpSchema.CallToolResult("Not connected to SonarQube Cloud, please provide 'SONARQUBE_CLOUD_TOKEN' and " +
-          "'SONARQUBE_CLOUD_ORG'", true));
+        .isEqualTo(new McpSchema.CallToolResult("Not connected to SonarQube, please provide valid credentials", true));
     }
 
-    @SonarQubeMcpServerTest
-    void it_should_return_an_error_if_sonarqube_cloud_org_is_missing(SonarQubeMcpServerTestHarness harness) {
-      var mcpClient = harness.newClient(Map.of("SONARQUBE_CLOUD_TOKEN", "token"));
-
-      var result = mcpClient.callTool(new McpSchema.CallToolRequest(
-        ListLanguagesTool.TOOL_NAME,
-        Map.of()));
-
-      assertThat(result)
-        .isEqualTo(new McpSchema.CallToolResult("Not connected to SonarQube Cloud, please provide 'SONARQUBE_CLOUD_TOKEN' and " +
-          "'SONARQUBE_CLOUD_ORG'", true));
-    }
   }
 
   @Nested
-  class WithServer {
+  class WithSonarCloudServer {
 
     private final MockWebServer mockServer = new MockWebServer();
 
@@ -84,9 +71,9 @@ class ListLanguagesToolTests {
     @SonarQubeMcpServerTest
     void it_should_return_an_error_if_the_request_fails_due_to_token_permission(SonarQubeMcpServerTestHarness harness) {
       var mcpClient = harness.newClient(Map.of(
-        "SONARQUBE_CLOUD_URL", mockServer.baseUrl(),
-        "SONARQUBE_CLOUD_TOKEN", "token",
-        "SONARQUBE_CLOUD_ORG", "org"
+        "SONARQUBE_URL", mockServer.baseUrl(),
+        "SONARQUBE_TOKEN", "token",
+        "SONARQUBE_ORG", "org"
       ));
 
       var result = mcpClient.callTool(new McpSchema.CallToolRequest(
@@ -101,9 +88,9 @@ class ListLanguagesToolTests {
     void it_should_show_error_when_request_fails(SonarQubeMcpServerTestHarness harness) {
       mockServer.stubFor(get(LanguagesApi.LIST_PATH).willReturn(aResponse().withStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR)));
       var mcpClient = harness.newClient(Map.of(
-        "SONARQUBE_CLOUD_URL", mockServer.baseUrl(),
-        "SONARQUBE_CLOUD_TOKEN", "token",
-        "SONARQUBE_CLOUD_ORG", "org"
+        "SONARQUBE_URL", mockServer.baseUrl(),
+        "SONARQUBE_TOKEN", "token",
+        "SONARQUBE_ORG", "org"
       ));
 
       var result = mcpClient.callTool(new McpSchema.CallToolRequest(
@@ -122,9 +109,9 @@ class ListLanguagesToolTests {
           Body.fromJsonBytes(generatePayload().getBytes(StandardCharsets.UTF_8))
         )));
       var mcpClient = harness.newClient(Map.of(
-        "SONARQUBE_CLOUD_URL", mockServer.baseUrl(),
-        "SONARQUBE_CLOUD_TOKEN", "token",
-        "SONARQUBE_CLOUD_ORG", "org"
+        "SONARQUBE_URL", mockServer.baseUrl(),
+        "SONARQUBE_TOKEN", "token",
+        "SONARQUBE_ORG", "org"
       ));
 
       var result = mcpClient.callTool(new McpSchema.CallToolRequest(
@@ -151,9 +138,94 @@ class ListLanguagesToolTests {
           Body.fromJsonBytes(generateFilteredPayload().getBytes(StandardCharsets.UTF_8))
         )));
       var mcpClient = harness.newClient(Map.of(
-        "SONARQUBE_CLOUD_URL", mockServer.baseUrl(),
-        "SONARQUBE_CLOUD_TOKEN", "token",
-        "SONARQUBE_CLOUD_ORG", "org"
+        "SONARQUBE_URL", mockServer.baseUrl(),
+        "SONARQUBE_TOKEN", "token",
+        "SONARQUBE_ORG", "org"
+      ));
+
+      var result = mcpClient.callTool(new McpSchema.CallToolRequest(
+        ListLanguagesTool.TOOL_NAME,
+        Map.of(ListLanguagesTool.QUERY_PROPERTY, "java")));
+
+      assertThat(result)
+        .isEqualTo(new McpSchema.CallToolResult("""
+          Supported Languages:
+
+          Java (java)
+          JavaScript (js)""", false));
+      assertThat(mockServer.getReceivedRequests())
+        .containsExactly(new ReceivedRequest("Bearer token", ""));
+    }
+  }
+
+  @Nested
+  class WithSonarQubeServer {
+
+    private final MockWebServer mockServer = new MockWebServer();
+
+    @BeforeEach
+    void setup() {
+      mockServer.start();
+    }
+
+    @AfterEach
+    void teardown() {
+      mockServer.stop();
+    }
+
+    @SonarQubeMcpServerTest
+    void it_should_return_an_error_if_the_request_fails_due_to_token_permission(SonarQubeMcpServerTestHarness harness) {
+      mockServer.stubFor(get(LanguagesApi.LIST_PATH).willReturn(aResponse().withStatus(HttpStatus.SC_FORBIDDEN)));
+      var mcpClient = harness.newClient(Map.of(
+        "SONARQUBE_URL", mockServer.baseUrl(),
+        "SONARQUBE_TOKEN", "token"
+      ));
+
+      var result = mcpClient.callTool(new McpSchema.CallToolRequest(
+        ListLanguagesTool.TOOL_NAME,
+        Map.of()));
+
+      assertThat(result)
+        .isEqualTo(new McpSchema.CallToolResult("An error occurred during the tool execution: SonarQube answered with Forbidden", true));
+    }
+
+    @SonarQubeMcpServerTest
+    void it_should_return_the_languages_list(SonarQubeMcpServerTestHarness harness) {
+      mockServer.stubFor(get(LanguagesApi.LIST_PATH)
+        .willReturn(aResponse().withResponseBody(
+          Body.fromJsonBytes(generatePayload().getBytes(StandardCharsets.UTF_8))
+        )));
+      var mcpClient = harness.newClient(Map.of(
+        "SONARQUBE_URL", mockServer.baseUrl(),
+        "SONARQUBE_TOKEN", "token"
+      ));
+
+      var result = mcpClient.callTool(new McpSchema.CallToolRequest(
+        ListLanguagesTool.TOOL_NAME,
+        Map.of()));
+
+      assertThat(result)
+        .isEqualTo(new McpSchema.CallToolResult("""
+          Supported Languages:
+
+          C (c)
+          C++ (cpp)
+          Java (java)
+          JavaScript (js)
+          Python (python)""", false));
+      assertThat(mockServer.getReceivedRequests())
+        .containsExactly(new ReceivedRequest("Bearer token", ""));
+    }
+
+    @SonarQubeMcpServerTest
+    void it_should_return_the_languages_list_with_query(SonarQubeMcpServerTestHarness harness) {
+      mockServer.stubFor(get(LanguagesApi.LIST_PATH + "?q=java")
+        .willReturn(aResponse().withResponseBody(
+          Body.fromJsonBytes(generateFilteredPayload().getBytes(StandardCharsets.UTF_8))
+        )));
+      var mcpClient = harness.newClient(Map.of(
+        "SONARQUBE_URL", mockServer.baseUrl(),
+        "SONARQUBE_TOKEN", "token"
       ));
 
       var result = mcpClient.callTool(new McpSchema.CallToolRequest(
